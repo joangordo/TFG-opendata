@@ -1,8 +1,10 @@
-# Cargar librerías necesarias
-if (!require("pacman")) install.packages("pacman")
+# script_llobregat.R
+
+# 1. Carga segura de librerías
+if (!require("pacman")) install.packages("pacman", repos = "https://cloud.r-project.org")
 pacman::p_load(httr, jsonlite, dplyr, purrr, tidyr)
 
-# 1. Configuración de parámetros y Grid
+# 2. Configuración del Grid (Tu lógica original)
 obtener_grid_llobregat <- function() {
   puntos_extremos <- list(
     sur   = c(41.2806, 1.9778),
@@ -19,35 +21,38 @@ obtener_grid_llobregat <- function() {
   step <- 0.04
   xmin_extendido <- xmin - (6 * step)
   
-  lats <- seq(ymin, ymax, by = step)
-  lons <- seq(xmin_extendido, xmax, by = step)
-  
-  grid <- expand.grid(lat = lats, lon = lons) %>%
-    mutate(id = row_number(), localidad = "Punto grid")
+  grid <- expand.grid(
+    lat = seq(ymin, ymax, by = step),
+    lon = seq(xmin_extendido, xmax, by = step)
+  ) %>% mutate(id = row_number(), localidad = "Punto grid")
   
   return(grid)
 }
 
-# 2. Función para consultar la API
+# 3. Función API con "paracaídas" (tryCatch)
 consultar_api <- function(lat, lon) {
   url <- "https://api.open-meteo.com/v1/forecast"
-  res <- GET(url, query = list(
-    latitude = lat, longitude = lon,
-    hourly = "precipitation,precipitation_probability,rain,showers",
-    forecast_days = 3, timezone = "Europe/Madrid", models = "best_match"
-  ))
-  if (status_code(res) == 200) return(fromJSON(content(res, "text", encoding = "UTF-8")))
+  
+  # Si la API falla, devolvemos NULL en lugar de romper el script
+  tryCatch({
+    res <- GET(url, query = list(
+      latitude = lat, longitude = lon,
+      hourly = "precipitation,precipitation_probability,rain,showers",
+      forecast_days = 3, timezone = "Europe/Madrid", models = "best_match"
+    ), timeout(20))
+    
+    if (status_code(res) == 200) {
+      return(fromJSON(content(res, "text", encoding = "UTF-8")))
+    }
+  }, error = function(e) return(NULL))
+  
   return(NULL)
 }
 
-# 3. Procesamiento con CRONÓMETRO
+# 4. Procesamiento Principal
 ejecutar_prediccion_con_tiempo <- function() {
-  # --- INICIO DEL RELOJ ---
   tiempo_inicio <- Sys.time()
-  message(paste("🚀 Iniciando proceso a las:", tiempo_inicio))
-  
   grid <- obtener_grid_llobregat()
-  total_puntos <- nrow(grid)
   
   resultados <- grid %>%
     split(.$id) %>%
@@ -67,14 +72,8 @@ ejecutar_prediccion_con_tiempo <- function() {
       )
       
       tibble(
-        ID = punto$id,
-        Localidad = punto$localidad,
-        Lat = round(punto$lat, 6),
-        Lon = round(punto$lon, 6),
+        ID = punto$id, Localidad = punto$localidad, Lat = round(punto$lat, 6), Lon = round(punto$lon, 6),
         Precip_1h  = round(sum(precip_total[1], na.rm = T), 2),
-        Precip_3h  = round(sum(precip_total[1:3], na.rm = T), 2),
-        Precip_6h  = round(sum(precip_total[1:6], na.rm = T), 2),
-        Precip_12h = round(sum(precip_total[1:12], na.rm = T), 2),
         Precip_24h = round(sum(precip_total[1:24], na.rm = T), 2),
         Precip_48h = round(sum(precip_total[1:48], na.rm = T), 2),
         Prob_Max   = as.integer(max(prob[1:48], na.rm = T)),
@@ -84,26 +83,17 @@ ejecutar_prediccion_con_tiempo <- function() {
       )
     })
   
-  # --- FINAL DEL RELOJ ---
-  tiempo_final <- Sys.time()
-  duracion <- difftime(tiempo_final, tiempo_inicio, units = "secs")
-  
-  message("---------------------------------------------------------")
-  message(paste("✅ Proceso completado con éxito."))
-  message(paste("⏱️ Tiempo total de ejecución:", round(duracion, 2), "segundos"))
-  message("---------------------------------------------------------")
-  
+  duracion <- difftime(Sys.time(), tiempo_inicio, units = "secs")
+  message(paste("⏱️ Ejecución finalizada en:", round(duracion, 2), "segundos"))
   return(resultados)
 }
 
-# --- LOGICA DE GUARDADO ---
+# --- EJECUCIÓN Y GUARDADO ---
 if(!dir.exists("data")) dir.create("data")
-# --- EJECUCIÓN ---
 df_final <- ejecutar_prediccion_con_tiempo()
 
-# 4. GUARDAR EN CSV
-# Nombre con Año-Mes-Dia_Hora-Minutos
-nombre_archivo <- paste0("data/prediccion_", format(Sys.time(), "%Y%m%d_%H%M"), ".csv")
-write.csv(df_final, nombre_archivo, row.names = FALSE)
-
-message(paste("✅ Archivo guardado:", nombre_archivo))
+if(!is.null(df_final)) {
+  nombre_archivo <- paste0("data/prediccion_", format(Sys.time(), "%Y%m%d_%H%M"), ".csv")
+  write.csv(df_final, nombre_archivo, row.names = FALSE)
+  message(paste("✅ Archivo guardado:", nombre_archivo))
+}
