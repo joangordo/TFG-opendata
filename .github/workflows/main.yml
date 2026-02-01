@@ -1,31 +1,32 @@
-name: Ejecutar Prediccion Llobregat
+name: Prediccion Llobregat 30min
 on:
   schedule:
-    - cron: '*/30 * * * *' # Esto significa: cada 30 minutos
-  workflow_dispatch:      # Permite ejecutarlo manualmente si quieres probar
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
 
 jobs:
-  build:
+  run-script:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout codigo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+
+      - name: Instalar dependencias de Linux
+        run: sudo apt-get install -y libcurl4-openssl-dev
 
       - name: Configurar R
         uses: r-lib/actions/setup-r@v2
 
-      - name: Instalar dependencias
+      - name: Instalar paquetes R
         run: |
-          Rscript -e 'install.packages("pacman")'
-          Rscript -e 'pacman::p_load(httr, jsonlite, dplyr, purrr, tidyr)'
+          Rscript -e 'install.packages(c("pacman", "httr", "jsonlite", "dplyr", "purrr", "tidyr"), repos="https://cloud.r-project.org")'
 
       - name: Ejecutar Script
         run: Rscript script-opendata.R
 
-      - name: Guardar cambios en GitHub
+      - name: Commit y Push de los datos
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
           git add data/*.csv
-          git commit -m "Auto-update: $(date)" || echo "No hay cambios"
+          git commit -m "Datos actualizados $(date)" || echo "Sin cambios"
           git push
