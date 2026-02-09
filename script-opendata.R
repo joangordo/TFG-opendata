@@ -1,4 +1,4 @@
-# script_llobregat.R
+# script_opendata.R
 
 # 1. Carga segura de librerías
 if (!require("pacman")) install.packages("pacman", repos = "https://cloud.r-project.org")
@@ -97,3 +97,4 @@ if(!is.null(df_final)) {
   write.csv(df_final, nombre_archivo, row.names = FALSE)
   message(paste("✅ Archivo guardado:", nombre_archivo))
 }
+
